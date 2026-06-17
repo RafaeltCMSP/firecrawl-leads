@@ -143,6 +143,12 @@ tecnica e score — apenas nao gera parecer nem copy.
 
 ## ▶️ Uso
 
+> **Configuracao na propria interface:** alem do `.env`/Secrets, o app tem um painel
+> **⚙️ Configuracoes de conexao** (no topo) onde da para colar, em runtime, a URL/chave
+> do Firecrawl, a chave/modelo do MiniMax e os dados do Chatwoot. Os valores valem para
+> a sessao, tem prioridade sobre o `.env` e nao sao salvos em disco. Ideal no Streamlit
+> Cloud para ajustar sem mexer nos Secrets.
+
 1. Na barra lateral, defina o **nicho** e uma ou mais **localidades** (uma por linha).
 2. Ajuste **resultados por busca**, **variacoes**, **enriquecimento** e **MiniMax**.
 3. Clique em **🚀 Rodar prospeccao** e acompanhe o progresso.

@@ -24,12 +24,12 @@ def _e164_br(raw: str) -> str:
 
 
 class ChatwootClient:
-    def __init__(self):
-        self.base_url = config.CHATWOOT_BASE_URL.rstrip("/")
-        self.token = config.CHATWOOT_API_TOKEN
-        self.account_id = config.CHATWOOT_ACCOUNT_ID
-        self.inbox_id = config.CHATWOOT_INBOX_ID
-        self.timeout = config.REQUEST_TIMEOUT
+    def __init__(self, base_url=None, token=None, account_id=None, inbox_id=None, timeout=None):
+        self.base_url = (base_url if base_url is not None else config.CHATWOOT_BASE_URL).rstrip("/")
+        self.token = token if token is not None else config.CHATWOOT_API_TOKEN
+        self.account_id = account_id if account_id is not None else config.CHATWOOT_ACCOUNT_ID
+        self.inbox_id = inbox_id if inbox_id is not None else config.CHATWOOT_INBOX_ID
+        self.timeout = timeout or config.REQUEST_TIMEOUT
 
     def _headers(self):
         return {"api_access_token": self.token, "Content-Type": "application/json"}

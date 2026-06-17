@@ -69,13 +69,14 @@ mais agendamento com isso ajustado. Posso te mandar 2 ideias rapidas?"
 
 
 class MiniMaxClient:
-    def __init__(self, api_key=None, base_url=None, model=None, timeout=None):
+    def __init__(self, api_key=None, base_url=None, model=None, timeout=None,
+                 group_id=None, offer=None):
         self.api_key = api_key or config.MINIMAX_API_KEY
         self.base_url = (base_url or config.MINIMAX_BASE_URL).rstrip("/")
         self.model = model or config.MINIMAX_MODEL
-        self.group_id = config.MINIMAX_GROUP_ID
+        self.group_id = group_id if group_id is not None else config.MINIMAX_GROUP_ID
         self.timeout = timeout or config.REQUEST_TIMEOUT
-        self.offer = config.AGENCY_OFFER
+        self.offer = offer or config.AGENCY_OFFER
 
     def _endpoint(self):
         url = f"{self.base_url}/text/chatcompletion_v2"
