@@ -2,6 +2,8 @@
 
 Rodar:  streamlit run app.py
 """
+import json
+
 import pandas as pd
 import streamlit as st
 
@@ -152,6 +154,44 @@ with st.expander("⚙️ Configuracoes de conexao (Firecrawl · MiniMax · Chatw
             })
             st.success("Configuracoes atualizadas para esta sessao.")
             st.rerun()
+
+with st.expander("💾 Backup / Restaurar dados (JSON)"):
+    st.caption("Exporte todos os leads num arquivo JSON e reimporte depois (apos atualizar "
+               "a ferramenta ou se a base for resetada). As URLs restauradas voltam a ser "
+               "puladas nas proximas prospeccoes com 'Pular URLs ja processadas' ativo.")
+    bcol1, bcol2 = st.columns(2)
+    with bcol1:
+        st.markdown("**Exportar**")
+        total_leads = len(st.session_state.leads)
+        st.download_button(
+            f"⬇️ Baixar backup ({total_leads} leads)",
+            data=db.export_json().encode("utf-8"),
+            file_name="leads_backup.json",
+            mime="application/json",
+            use_container_width=True,
+            disabled=total_leads == 0,
+        )
+    with bcol2:
+        st.markdown("**Importar**")
+        overwrite = st.radio(
+            "Se a URL ja existir na base:",
+            ["Manter o existente", "Substituir pelo importado"],
+            index=0,
+        ) == "Substituir pelo importado"
+        up = st.file_uploader("Arquivo JSON de backup", type=["json"], key="import_json")
+        if up is not None and st.button("📥 Importar agora", use_container_width=True):
+            try:
+                data = json.loads(up.getvalue().decode("utf-8"))
+                res = db.import_leads(data, overwrite=overwrite)
+                st.session_state.leads = {l.url: l for l in db.all_leads()}
+                msg = (f"Importado: {res['added']} novos · {res['updated']} atualizados · "
+                       f"{res['skipped']} mantidos. Total na base: {len(st.session_state.leads)}.")
+                if res["invalid"]:
+                    msg += f" ({res['invalid']} registros ignorados por estarem invalidos.)"
+                st.success(msg)
+                st.rerun()
+            except Exception as e:  # noqa: BLE001
+                st.error(f"Falha ao importar: {e}")
 
 
 # ----------------------------- Execucao -----------------------------

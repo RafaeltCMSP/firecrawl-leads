@@ -3,12 +3,18 @@
 Faz migracao automatica: cria a tabela e adiciona colunas novas que faltarem
 (ALTER TABLE), sem apagar dados existentes.
 """
+import json
 import os
 import sqlite3
+import time
 from typing import List, Optional
 
 import config
 from src.models import Lead
+
+# Identificacao do formato de backup (para validar import)
+BACKUP_SCHEMA = "prospeccao-leads"
+BACKUP_VERSION = 1
 
 # Ordem e nomes das colunas (espelha os campos do Lead persistidos)
 COLUMNS = [
@@ -97,3 +103,59 @@ def update_status(url: str, status: str, chatwoot_id: str = ""):
             "UPDATE leads SET status = ?, chatwoot_id = ? WHERE url = ?",
             (status, chatwoot_id, url),
         )
+
+
+# ----------------------------- Backup (export/import JSON) -----------------------------
+def export_dict() -> dict:
+    """Snapshot completo da base: todos os leads com todos os campos."""
+    leads = all_leads()
+    return {
+        "schema": BACKUP_SCHEMA,
+        "version": BACKUP_VERSION,
+        "exported_at": time.time(),
+        "count": len(leads),
+        "leads": [l.to_dict() for l in leads],
+    }
+
+
+def export_json(indent: int = 2) -> str:
+    return json.dumps(export_dict(), ensure_ascii=False, indent=indent)
+
+
+def import_leads(data, overwrite: bool = False) -> dict:
+    """Importa leads de um backup JSON (dict com 'leads' ou lista pura).
+
+    overwrite=False mantem o lead existente em caso de URL repetida; True substitui.
+    Retorna contagem {added, updated, skipped, total, invalid}.
+    """
+    if isinstance(data, str):
+        data = json.loads(data)
+    if isinstance(data, dict):
+        rows = data.get("leads", [])
+    elif isinstance(data, list):
+        rows = data
+    else:
+        raise ValueError("JSON invalido: esperado objeto com 'leads' ou uma lista de leads.")
+    if not isinstance(rows, list):
+        raise ValueError("Campo 'leads' precisa ser uma lista.")
+
+    added = updated = skipped = invalid = 0
+    for item in rows:
+        if not isinstance(item, dict):
+            invalid += 1
+            continue
+        url = (item.get("url") or "").strip()
+        if not url:
+            invalid += 1
+            continue
+        present = exists(url)
+        if present and not overwrite:
+            skipped += 1
+            continue
+        upsert(Lead.from_row(item))
+        if present:
+            updated += 1
+        else:
+            added += 1
+    return {"added": added, "updated": updated, "skipped": skipped,
+            "invalid": invalid, "total": len(rows)}
