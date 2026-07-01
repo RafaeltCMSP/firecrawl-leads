@@ -1,12 +1,14 @@
 """Orquestra o funil generico: buscar -> raspar -> detectar -> (enriquecer) ->
 (MiniMax) -> salvar. Funciona para qualquer nicho e qualquer regiao."""
+import json
 import re
 import time
 
 import config
 from src import db, detector
 from src.firecrawl_client import FirecrawlClient
-from src.minimax_client import MiniMaxClient
+from src.minimax_client import (DEFAULT_OBJECTIVE, PITCH_BLOCKS,  # noqa: F401
+                                 MiniMaxClient)
 from src.models import Lead
 
 # Sugestoes de UI (nao restringem nada)
@@ -45,6 +47,42 @@ def is_portal(url: str) -> bool:
     if any(p in low for p in PORTALS):
         return True
     return any(h in low for h in LISTICLE_HINTS)
+
+
+# ----------------------------- Dicas de abordagem -----------------------------
+def apply_pitch(lead: Lead, data: dict, objetivo: str, contexto: str = ""):
+    """Serializa e grava as dicas geradas no lead (nao persiste no banco)."""
+    lead.pitch_tips = json.dumps(data or {}, ensure_ascii=False)
+    lead.pitch_objetivo = objetivo or ""
+    lead.pitch_contexto = contexto or ""
+
+
+def format_pitch_message(data: dict) -> str:
+    """Monta um texto pronto pra copiar a partir dos blocos.
+
+    Prefere a 'mensagem_pronta' do modelo; se faltar, costura os 6 blocos.
+    """
+    if not data:
+        return ""
+    ready = (data.get("mensagem_pronta") or "").strip()
+    if ready:
+        return ready
+    partes = [str(data.get(key, "")).strip() for key, _ in PITCH_BLOCKS]
+    return " ".join(p for p in partes if p)
+
+
+def build_pitch(lead: Lead, mm: MiniMaxClient, objetivo=DEFAULT_OBJECTIVE,
+                contexto="", on_log=None) -> dict:
+    """Gera as dicas via MiniMax e aplica no lead. Retorna o dict (ou {} em erro)."""
+    try:
+        data = mm.generate_pitch(lead=lead, objetivo=objetivo, contexto=contexto)
+        if data:
+            apply_pitch(lead, data, objetivo, contexto)
+        return data or {}
+    except Exception as e:  # noqa: BLE001
+        if on_log:
+            on_log(f"  dicas falharam em {lead.url}: {e}")
+        return {}
 
 
 def build_queries(niche: str, location: str, variations: bool):
@@ -143,7 +181,8 @@ def enrich_lead(lead: Lead, fc: FirecrawlClient, on_log=None):
                             if getattr(lead, s))
 
 
-def process_candidate(cand, fc, mm=None, use_minimax=True, deep_enrich=False, on_log=None) -> Lead:
+def process_candidate(cand, fc, mm=None, use_minimax=True, deep_enrich=False,
+                      generate_tips=True, tips_objetivo=DEFAULT_OBJECTIVE, on_log=None) -> Lead:
     url = cand["url"]
     lead = Lead(url=url, niche=cand.get("niche", ""), location=cand.get("location", ""),
                 name=(cand.get("title") or "").strip())
@@ -191,6 +230,12 @@ def process_candidate(cand, fc, mm=None, use_minimax=True, deep_enrich=False, on
                 lead.error = f"minimax: {e}"
                 if on_log:
                     on_log(f"  MiniMax falhou em {url}: {e}")
+
+            # Dicas de abordagem estruturadas: so para bons leads (economiza chamadas).
+            if generate_tips and lead.is_good_lead:
+                if on_log:
+                    on_log(f"  gerando dicas de abordagem para {url}...")
+                build_pitch(lead, mm, objetivo=tips_objetivo, on_log=on_log)
     except Exception as e:  # noqa: BLE001
         lead.status = "erro"
         lead.error = str(e)

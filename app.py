@@ -11,9 +11,11 @@ import config
 from src import db
 from src.chatwoot_client import ChatwootClient
 from src.firecrawl_client import FirecrawlClient
-from src.minimax_client import MiniMaxClient
-from src.pipeline import (LOCATION_SUGGESTIONS, NICHE_SUGGESTIONS,
-                          process_candidate, search_candidates)
+from src.minimax_client import (DEFAULT_OBJECTIVE, PITCH_BLOCKS,
+                                 PITCH_OBJECTIVES, MiniMaxClient)
+from src.pipeline import (LOCATION_SUGGESTIONS, NICHE_SUGGESTIONS, build_pitch,
+                          format_pitch_message, process_candidate,
+                          search_candidates)
 
 st.set_page_config(page_title="Prospeccao de Leads", page_icon="🎯", layout="wide")
 
@@ -78,6 +80,57 @@ def make_cw():
                           account_id=s["CHATWOOT_ACCOUNT_ID"], inbox_id=s["CHATWOOT_INBOX_ID"])
 
 
+# Emojis por bloco, para deixar as dicas mais visuais na UI
+BLOCK_ICONS = {
+    "gancho_inicial": "🎣", "concorrencia": "🏘️", "realidade_dele": "🎯",
+    "beneficios": "📈", "dor_principal": "💬", "manter_contato": "🔁",
+}
+
+
+def render_tips(l):
+    """Renderiza as dicas de abordagem de um lead + controles de (re)geracao."""
+    st.markdown("**🧠 Dicas de abordagem (MiniMax)**")
+    tips = l.tips_dict
+    if not mm_ready():
+        st.caption("Ative o MiniMax em Configuracoes para gerar dicas.")
+        return
+    if tips:
+        for key, label in PITCH_BLOCKS:
+            val = (tips.get(key) or "").strip()
+            if val:
+                st.markdown(f"{BLOCK_ICONS.get(key, '•')} **{label}:** {val}")
+        if l.pitch_objetivo:
+            st.caption(f"Objetivo: {l.pitch_objetivo}")
+        st.text_area("Mensagem pronta (copiar)", format_pitch_message(tips),
+                     key=f"tipmsg_{l.url}", height=140)
+    else:
+        st.caption("Nenhuma dica gerada ainda. Escolha um objetivo e gere abaixo.")
+
+    with st.form(f"tipform_{l.url}"):
+        obj_default = l.pitch_objetivo if l.pitch_objetivo in PITCH_OBJECTIVES else DEFAULT_OBJECTIVE
+        obj = st.selectbox("Objetivo", PITCH_OBJECTIVES,
+                           index=PITCH_OBJECTIVES.index(obj_default), key=f"tipobj_{l.url}")
+        ctx = st.text_area(
+            "Contexto (opcional)", l.pitch_contexto, key=f"tipctx_{l.url}", height=70,
+            help="Ex.: 'ele comentou que o orcamento esta apertado', 'tem sauna e "
+                 "area gourmet', 'ja falei com ele mes passado'...")
+        gerar = st.form_submit_button(
+            "✨ Gerar novas dicas" if tips else "✨ Gerar dicas", type="primary")
+    if gerar:
+        with st.spinner("Gerando dicas..."):
+            try:
+                data = build_pitch(l, make_mm(), objetivo=obj, contexto=ctx)
+                if data:
+                    db.upsert(l)
+                    st.session_state.leads[l.url] = l
+                    st.success("Dicas geradas!")
+                    st.rerun()
+                else:
+                    st.error("O MiniMax nao retornou dicas. Tente novamente.")
+            except Exception as e:  # noqa: BLE001
+                st.error(f"Falha ao gerar dicas: {e}")
+
+
 # ----------------------------- Sidebar -----------------------------
 with st.sidebar:
     st.header("⚙️ Conexoes")
@@ -111,6 +164,15 @@ with st.sidebar:
     skip_portals = st.checkbox("Ignorar portais/agregadores", value=True)
     deep_enrich = st.checkbox("Enriquecer (buscar redes/Google)", value=True)
     use_mm = st.checkbox("Analise MiniMax", value=mm_ready(), disabled=not mm_ready())
+    gen_tips = st.checkbox(
+        "Gerar dicas de abordagem", value=mm_ready(), disabled=not mm_ready(),
+        help="Cria automaticamente as dicas estruturadas (gancho, concorrencia, "
+             "beneficios...) para cada bom lead ja na captura. Usa o MiniMax.")
+    tips_objetivo = st.selectbox(
+        "Objetivo das dicas (captura)", PITCH_OBJECTIVES, index=0,
+        disabled=not (mm_ready() and gen_tips),
+        help="Rumo padrao das dicas geradas na prospeccao. Voce pode regerar por "
+             "lead depois, com outro objetivo e contexto.")
     skip_existing = st.checkbox("Pular URLs ja processadas", value=True)
     run = st.button("🚀 Rodar prospeccao", type="primary", use_container_width=True)
 
@@ -218,7 +280,9 @@ if run:
             for i, c in enumerate(cands, start=1):
                 st.write(f"[{i}/{total}] {c['url']}")
                 lead = process_candidate(c, fc, mm, use_minimax=(mm is not None),
-                                         deep_enrich=deep_enrich, on_log=log)
+                                         deep_enrich=deep_enrich,
+                                         generate_tips=(gen_tips and mm is not None),
+                                         tips_objetivo=tips_objetivo, on_log=log)
                 st.session_state.leads[lead.url] = lead
                 bar.progress(i / total if total else 1.0)
             status.update(label=f"Concluido: {total} sites processados.", state="complete")
@@ -301,6 +365,8 @@ else:
                 msg = st.text_area("Abordagem WhatsApp", l.outreach, key=f"wa_{l.url}", height=110)
                 if l.outreach_email:
                     st.text_area("Abordagem E-mail", l.outreach_email, key=f"em_{l.url}", height=140)
+                st.divider()
+                render_tips(l)
             with right:
                 st.metric("Opp-score", l.opportunity_score)
                 st.metric("Qualidade (MiniMax)", l.quality_score)

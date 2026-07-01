@@ -68,6 +68,70 @@ mais agendamento com isso ajustado. Posso te mandar 2 ideias rapidas?"
 """
 
 
+# --------------------------- Dicas de abordagem (pitch estruturado) ---------------------------
+# Objetivos selecionaveis no app. Genericos + alguns tipicos de imobiliaria.
+PITCH_OBJECTIVES = [
+    "Agendar uma call/reuniao de diagnostico",
+    "Vender gestao de trafego pago (Google/Meta)",
+    "Criar ou refazer o site",
+    "Colocar no Google Meu Negocio / Maps",
+    "Ativar e organizar as redes sociais",
+    "Anuncios destacando diferenciais do imovel/servico",
+    "Reativar contato / follow-up",
+    "Primeiro contato - apresentar a agencia",
+]
+DEFAULT_OBJECTIVE = PITCH_OBJECTIVES[0]
+
+# Ordem dos blocos e rotulos amigaveis (usado na UI e para montar a mensagem)
+PITCH_BLOCKS = [
+    ("gancho_inicial", "Gancho inicial"),
+    ("concorrencia", "Concorrencia"),
+    ("realidade_dele", "Realidade dele"),
+    ("beneficios", "Beneficios"),
+    ("dor_principal", "Dor principal"),
+    ("manter_contato", "Manter contato"),
+]
+
+
+def _pitch_system(offer: str) -> str:
+    return (
+        "Voce e um consultor de vendas B2B e copywriter de outbound de uma agencia "
+        f"que vende {offer}. Escreva uma abordagem consultiva, dividida em blocos, "
+        "para prospectar um negocio como CLIENTE. Tom humano, especifico e "
+        "encadeado, como quem estudou o negocio - nunca spam de agencia. "
+        "Portugues do Brasil natural. Responda SOMENTE com JSON valido, sem markdown."
+    )
+
+
+PITCH_SCHEMA_HINT = """
+Estrutura da abordagem (framework consultivo). Cada bloco tem 1-2 frases, especifico
+ao negocio, e os blocos devem encadear naturalmente numa conversa:
+{
+  "gancho_inicial": "abertura mostrando que voce analisou o negocio/regiao dele - algo concreto e verdadeiro (bairro, nome, um servico real, um sinal do site)",
+  "concorrencia": "o que os concorrentes do nicho/regiao fazem mal ou nao fazem - a oportunidade de mercado",
+  "realidade_dele": "aplicado ao negocio DELE: um diferencial real ou uma lacuna concreta observada nos sinais",
+  "beneficios": "o resultado pratico que ele ganha (mais clientes/agendamentos/leads/visitas), ligado ao diferencial ou lacuna",
+  "dor_principal": "reconheca com empatia uma possivel objecao/dor (orcamento, tempo, momento). Se houver CONTEXTO do vendedor, use-o aqui",
+  "manter_contato": "CTA leve OU follow-up sem pressao, sempre em forma de pergunta",
+  "mensagem_pronta": "os blocos costurados numa unica mensagem pronta pra enviar no WhatsApp: curta, natural, no maximo 1 emoji (pode ser nenhum)"
+}
+
+Regras:
+- Use SOMENTE fatos reais dos sinais fornecidos. Sem diferencial explicito, use uma
+  lacuna concreta (sem Instagram, fora do Google Maps, nao roda anuncios, site fraco no celular).
+- TODOS os blocos devem servir ao OBJETIVO informado.
+- Se houver CONTEXTO do vendedor, incorpore-o (especialmente no bloco dor_principal e no gancho).
+- PROIBIDO clichê: "identificamos que sua empresa tem potencial", "somos uma agencia que",
+  "oferecemos servicos de", "venho por meio desta", "prezado(a)".
+
+Referencia de tom (NAO copie, apenas o estilo consultivo encadeado):
+"Acabei de analisar os anuncios da sua regiao e achei uma oportunidade. Pesquisando os
+imoveis do seu bairro, percebi que ninguem destaca os diferenciais nos anuncios. No seu
+caso, a sauna e um diferencial que atrai quem ja procura esse perfil. Assim seu imovel
+aparece em destaque pra quem busca, otimizando o custo da campanha..."
+"""
+
+
 class MiniMaxClient:
     def __init__(self, api_key=None, base_url=None, model=None, timeout=None,
                  group_id=None, offer=None):
@@ -136,5 +200,37 @@ class MiniMaxClient:
         messages = [
             {"role": "system", "content": _system_prompt(self.offer) + "\n" + JSON_SCHEMA_HINT},
             {"role": "user", "content": contexto},
+        ]
+        return self._parse_json(self._chat(messages))
+
+    def generate_pitch(self, *, lead, objetivo=DEFAULT_OBJECTIVE, contexto="") -> dict:
+        """Gera as dicas de abordagem (framework de 6 blocos + mensagem pronta).
+
+        `lead` e um objeto Lead (usa duck typing via getattr). `objetivo` orienta o
+        rumo da abordagem; `contexto` e texto livre opcional do vendedor.
+        """
+        present = [n for n in ("instagram", "facebook", "linkedin", "youtube", "tiktok", "twitter")
+                   if getattr(lead, n, "")]
+        sinais = (
+            f"Negocio: {getattr(lead, 'name', '') or getattr(lead, 'domain', '')}\n"
+            f"Nicho: {getattr(lead, 'niche', '')}\n"
+            f"Regiao: {getattr(lead, 'location', '')}\n"
+            f"Site: {getattr(lead, 'url', '')}\n"
+            f"Parecer do site: {getattr(lead, 'site_quality', '') or '(sem analise)'}\n"
+            f"Pontos fracos: {getattr(lead, 'weaknesses', '') or '(nenhum mapeado)'}\n"
+            f"Canais faltando: {getattr(lead, 'missing_channels', '') or '(nenhum mapeado)'}\n"
+            f"Anuncios pagos: {getattr(lead, 'ad_pixels', '') or 'NENHUM'}\n"
+            f"Google Maps/Meu Negocio: {getattr(lead, 'has_maps', False)}\n"
+            f"Redes presentes: {', '.join(present) or 'NENHUMA'}\n"
+            f"Gancho ja identificado: {getattr(lead, 'pitch_angle', '') or '(nenhum)'}\n"
+        )
+        user = (
+            f"OBJETIVO desta abordagem: {objetivo}\n"
+            f"CONTEXTO adicional do vendedor: {contexto.strip() or '(nenhum)'}\n\n"
+            f"--- Sinais do lead ---\n{sinais}"
+        )
+        messages = [
+            {"role": "system", "content": _pitch_system(self.offer) + "\n" + PITCH_SCHEMA_HINT},
+            {"role": "user", "content": user},
         ]
         return self._parse_json(self._chat(messages))

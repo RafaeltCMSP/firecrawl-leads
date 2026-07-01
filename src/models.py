@@ -1,4 +1,5 @@
 """Estrutura de um Lead (generico: qualquer nicho, qualquer regiao)."""
+import json
 import time
 from dataclasses import dataclass, field, asdict
 from urllib.parse import urlparse
@@ -53,6 +54,11 @@ class Lead:
     outreach: str = ""        # mensagem WhatsApp
     outreach_email: str = ""  # assunto + corpo de e-mail
 
+    # Dicas de abordagem (framework de 6 blocos, geradas pelo MiniMax)
+    pitch_tips: str = ""      # JSON serializado com os blocos + mensagem_pronta
+    pitch_objetivo: str = ""  # objetivo usado na ultima geracao
+    pitch_contexto: str = ""  # contexto livre usado na ultima geracao
+
     # Meta
     status: str = "novo"      # novo | qualificado | descartado | enviado_chatwoot | erro
     error: str = ""
@@ -77,6 +83,17 @@ class Lead:
                  ("LinkedIn", self.linkedin), ("YouTube", self.youtube),
                  ("TikTok", self.tiktok), ("Twitter/X", self.twitter)]
         return [(n, u) for n, u in pairs if u]
+
+    @property
+    def tips_dict(self) -> dict:
+        """Dicas de abordagem desserializadas (vazio se ainda nao geradas)."""
+        if not self.pitch_tips:
+            return {}
+        try:
+            data = json.loads(self.pitch_tips)
+            return data if isinstance(data, dict) else {}
+        except (ValueError, TypeError):
+            return {}
 
     @property
     def is_good_lead(self) -> bool:

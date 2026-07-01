@@ -27,6 +27,7 @@ COLUMNS = [
     "opportunity_score",
     "site_quality", "weaknesses", "missing_channels", "quality_score",
     "lead_temp", "pitch_angle", "outreach", "outreach_email",
+    "pitch_tips", "pitch_objetivo", "pitch_contexto",
     "status", "error", "chatwoot_id", "created_at",
 ]
 
